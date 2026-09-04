@@ -1,0 +1,371 @@
+// weather-station-w110.c
+/*
+ * Author: RedFox97
+ * Đấu nối
+ * |---------|---------|---------------|
+ * |   LCD   | ESP8266 | Chân đặc biệt |
+ * |---------|---------|---------------|
+ * |   RST   |    D0   |     GPIO16    |
+ * |   SCLK  |    D6   |     GPIO12    |
+ * |   A0    |    D5   |     GPIO14    |
+ * |   SID   |    D7   |     GPIO13    |
+ * |---------|---------|---------------|
+ */
+
+//Khai báo thư viện
+#include <ESP8266WiFi.h>              // Thư viện esp8266 version 2.5.2
+#include <time.h>
+#include <Ticker.h>
+#include <ESP8266HTTPClient.h>        // Thư viện HTTP Client version 0.4.0
+#include <DNSServer.h>
+#include <ESP8266WebServer.h>
+#include <WiFiManager.h>              // Thư viện WiFi Manager version 0.14
+#include <ArduinoJson.h>              // Thư viện decode Json version 6.13.0
+#include "ST7565_homephone_esp8266.h"
+
+// Khai báo chân nút bấm, còi
+#define Select  5     //D1--GPIO5---------Chân số 1
+#define Up      4     //D2--GPIO4---------Chân số 2
+#define Down    0     //D3--GPIO0---------Chân số 3
+#define Back    2     //D4--GPIO2---------Chân số 4
+#define Buzz    15    //D8--GPIO15
+
+// Tọa độ có thể tùy vào vị trí bạn ở
+const String cityName   = "Ha Noi";
+const String latitude   = "21.0651854";                         // Kinh độ
+const String longitude  = "105.7185722";                        // Vĩ độ
+const String key        = "ca66835ddbaa496c9d11aee5f4xxxxxx";   // auth key weatherbit.io
+int     lanChayHieuUng, viTriHieuUng, thoiGianChayHieuUng;
+String  ngayTrongTuan, thang, ngay, gio, phut, giay, nam;
+int     hour, minute, sec;
+int     nhietDoHienTai, doAmHienTai, thoiTietHienTai, nhietDoNgayMai, doAmNgayMai, thoiTietNgayMa;
+String  ngayMai, thangSau;
+int dBm, quality, percent;
+const static unsigned char tdo[]= {
+  0x00,0x07, 0x05, 0x07, 0x00,
+};
+const unsigned char rain [] = {
+0xC0, 0xF0, 0xF0, 0xF0, 0xF0, 0xF0, 0xB8, 0xDE, 0xFE, 0xFE, 0xFF, 0xFF, 0xFF, 0xFF, 0xFA, 0xFA,
+0xFE, 0xBC, 0xD8, 0xF0, 0xC0, 0xC0, 0xC0, 0x80, 0x03, 0x07, 0x0D, 0x0F, 0x0F, 0x8F, 0x0F, 0x1F,
+0x1F, 0xBF, 0x37, 0x37, 0x37, 0xB7, 0x37, 0x3B, 0x1F, 0x8F, 0x0F, 0x1F, 0x1F, 0x1F, 0x0F, 0x07,
+0x00, 0x00, 0x00, 0x00, 0x03, 0x31, 0x18, 0x00, 0x03, 0x01, 0x30, 0x18, 0x03, 0x01, 0x30, 0x18,
+0x03, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+const unsigned char cloudy [] = {
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x60, 0x90, 0x08, 0x08, 0x08,
+0x18, 0x24, 0x02, 0x02, 0x02, 0x02, 0x24, 0x18, 0x10, 0x10, 0x10, 0x10, 0x20, 0xC0, 0x00, 0x00,
+0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 
+};
+const unsigned char lighting [] = {
+0x00, 0x00, 0x00, 0x80, 0x80, 0xC0, 0x60, 0x60, 0x60, 0x60, 0x70, 0x30, 0x30, 0x30, 0xE0, 0xC0,
+0xC0, 0xC0, 0xC0, 0x80, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0x0F, 0x0D, 0x0C, 0x0C, 0x0C,
+0x8C, 0xCC, 0xEC, 0x6C, 0x2C, 0x0C, 0x0C, 0x0C, 0x0C, 0x0C, 0x0C, 0x0C, 0x0F, 0x07, 0x00, 0x00,
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x03, 0x23, 0x1B, 0x0F, 0x07, 0x03, 0x01, 0x00,
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+};
+const unsigned char lighting_rain [] = {
+0x00, 0x00, 0x00, 0x80, 0x80, 0xC0, 0x60, 0x60, 0x60, 0x60, 0x70, 0x30, 0x30, 0x30, 0xE0, 0xC0,
+0xC0, 0xC0, 0xC0, 0x80, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0x4F, 0x0D, 0x4C, 0x0C, 0x0C,
+0x8C, 0xCC, 0xEC, 0x6C, 0x2C, 0x0C, 0x0C, 0x0C, 0x0C, 0x4C, 0x0C, 0x4C, 0x0F, 0x07, 0x00, 0x00,
+0x00, 0x10, 0x02, 0x10, 0x02, 0x00, 0x00, 0x02, 0x03, 0x23, 0x1B, 0x0F, 0x07, 0x03, 0x01, 0x10,
+0x02, 0x10, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 
+};
+const unsigned char night [] = {
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x40, 0x40, 0x20, 0x20, 0x20, 0xA0, 0xA0, 0x40,
+0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7C, 0x83, 0x00,
+0x00, 0x7C, 0x82, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x04, 0x04, 0x08, 0x09, 0x09, 0x0A, 0x0A, 0x04,
+0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+};
+const unsigned char clear_sky [] = {
+0x00, 0x00, 0x40, 0xE0, 0xC0, 0x00, 0x08, 0x9C, 0xD8, 0xC0, 0xE2, 0xEC, 0xEC, 0xE2, 0xC0, 0xD8,
+0x9C, 0x08, 0x00, 0xC0, 0xE0, 0x40, 0x00, 0x00, 0x24, 0x18, 0x18, 0x00, 0x00, 0x3C, 0xFF, 0xFF,
+0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x3C, 0x00, 0x00, 0x18, 0x18, 0x24,
+0x00, 0x00, 0x02, 0x07, 0x03, 0x00, 0x10, 0x39, 0x1B, 0x03, 0x47, 0x37, 0x37, 0x47, 0x03, 0x1B,
+0x39, 0x10, 0x00, 0x03, 0x07, 0x02, 0x00, 0x00, 
+};
+
+const unsigned char clear_cloudy [] = {
+0x00, 0x00, 0x00, 0x00, 0x08, 0x10, 0x20, 0x80, 0xC0, 0xC0, 0x5C, 0x40, 0x40, 0xC0, 0x80, 0x20,
+0x10, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x81, 0xC1, 0x41, 0x50, 0x57, 0xFD,
+0xF8, 0x38, 0x18, 0x18, 0x18, 0x18, 0x3D, 0xF7, 0xD0, 0x81, 0x81, 0x81, 0x00, 0x00, 0x00, 0x00,
+0x00, 0x07, 0x0F, 0x18, 0x30, 0x30, 0x30, 0x30, 0x31, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30,
+0x30, 0x30, 0x30, 0x31, 0x33, 0x1E, 0x00, 0x00, 
+};
+const unsigned char night_cloud [] = {
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x40, 0x20, 0x20, 0x10, 0x90, 0x90, 0x50,
+0x50, 0x20, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x40, 0x40, 0x7E,
+0xC1, 0x20, 0x10, 0x1E, 0x11, 0x10, 0x20, 0xC0, 0x80, 0x80, 0x80, 0x80, 0x00, 0x00, 0x00, 0x00,
+0x00, 0x00, 0x00, 0x03, 0x04, 0x08, 0x08, 0x08, 0x08, 0x09, 0x08, 0x08, 0x08, 0x08, 0x09, 0x08,
+0x08, 0x08, 0x08, 0x08, 0x09, 0x06, 0x00, 0x00, 
+};
+ST7565 lcd(16, 12, 14, 13);       //RST, SCLK, A0, SID
+Ticker      flip;
+WiFiManager wifiManager;
+
+void setup() {
+  Serial.begin(115200);                                       // Khởi tạo Serial với baudrate 115200
+  configTime(7 * 3600, 0, "pool.ntp.org", "time.nist.gov");   // Cài đặt thời gian
+  pinMode(Select,INPUT_PULLUP);
+  pinMode(Up,INPUT_PULLUP);
+  pinMode(Down,INPUT_PULLUP);
+  pinMode(Back,INPUT_PULLUP);
+  pinMode(Buzz,OUTPUT);
+  lcd.ON();                                                   // Khởi tạo LCD
+  lcd.SET(35,0,0,0,4);
+  lcd.display();
+  lcd.clear();                                                // Hiển thị
+  lcd.Corner(0,0,127,63,5,BLACK);                             // Vẽ bo ngoài
+  canGiua(64,12,"Dang cai dat...");                           // Thông báo đang cài đặt WiFi
+  lcd.display();
+  delay(500);
+  wifiManager.autoConnect("Weather Station","12345678");      // Chờ kết nối WiFi
+  canGiua(64,22,"Da ket noi WiFi");                           // Thông báo kết nối thành công WiFi
+  lcd.display();
+  delay(500);
+  while(nam.toInt()<2000) {                                   // Chờ cập nhật thời gian xong
+    capNhatThoiGian();                                        // Cập nhật thời gian
+    delay(50);
+  }
+  duBaoHienTai(latitude, longitude, key);
+  duBaoThoiTiet(latitude, longitude, key);
+  canGiua(64,32,"Da cap nhat");                               // Thông báo cập nhật xong thời gian
+  canGiua(64,42,"thoi gian");                                 // Thông báo cập nhật xong thời gian
+  lcd.display();
+  delay(2000);
+  flip.attach(1,ngat);                                        // Khởi tạo ngắt 1s
+}
+
+void loop() {
+  lcd.clear();
+  lcd.Corner(0,0,127,63,5,BLACK);
+  lcd.DrawLine(0,10,128,10,BLACK);
+  canGiua(64,1,cityName);                                      // Hiển thị tên Thành Phố
+  Signal();
+  lcd.DrawLine(0,34,128,34,BLACK);                            // Đường kẻ giữa thời gian và thông tin thời tiết
+  canGiua(32,13,ngayTrongTuan);                               // Hiển thị thời gian
+  canGiua(32,24,ngay+"/"+thang+"/"+String(nam));
+  hienThiGio();
+  lcd.DrawLine(64 - viTriHieuUng, 34, 64 - viTriHieuUng, 64, BLACK);
+  lcd.DrawLine(128 - viTriHieuUng, 34, 128 - viTriHieuUng, 64, BLACK);
+  hienThiThoiTiet(18,36,ngay + "/" + thang,String(nhietDoHienTai),String(doAmHienTai));
+  iconThoiTiet(38,38,thoiTietHienTai,1);
+  hienThiThoiTiet(82,36,ngayMai + "/" + thangSau,String(nhietDoNgayMai),String(doAmNgayMai));
+  iconThoiTiet(102,38,thoiTietNgayMai,2);
+  lcd.display();
+}
+
+void ngat() {
+  sec++;
+  if(sec == 60) {
+    minute++;
+    sec = 0;
+  }
+  if(minute == 60) {
+    hour++;
+    minute = 0;
+  }
+  if(hour == 24) {                              // Sau 1 ngày cập nhật thời gian 1 lần
+    hour = 0;
+    capNhatThoiGian();
+  }
+  if(WiFi.status() != WL_CONNECTED)
+    WiFi.reconnect();
+}
+
+
+/*
+ * Lấy thời gian, trả về
+ * |-----------------|---------------|----------------------|
+ * |      Biến       |  Kiểu trả về  |       Nhiệm vụ       |
+ * |-----------------|---------------|----------------------|
+ * |      ngay       |               |                      |
+ * |  ngayTrongTuan  |               |                      |
+ * |      thang      |               |                      |
+ * |       nam       |    String     |       Hiển thị       |
+ * |       gio       |               |                      |
+ * |      phut       |               |                      |
+ * |      giay       |               |                      |
+ * |                 |---------------|----------------------|
+ * |      hour       |               |                      |
+ * |     minute      |      Int      |  Đếm thời gian thực  |
+ * |       sec       |               |                      |
+ * |-----------------|---------------|----------------------|
+ */
+void capNhatThoiGian() {
+  time_t now = time(nullptr);
+  String data = ctime(&now);    // Lưu chuỗi nhận được
+  // Tách dữ liệu
+  ngayTrongTuan  = data.substring(0,3);
+  String month          = data.substring(4,7);
+  ngay                  = data.substring(8,10);             // Ngày để hiển thị
+  gio                   = data.substring(11,13);            // Giờ để hiển thị
+  phut                  = data.substring(14,16);            // Phút để hiển thị
+  giay                  = data.substring(17,19);            // Giây để hiển thị
+  nam                   = data.substring(20,24);            // Năm để hiển thị
+  
+  //Biến đổi
+  ngayTrongTuan.toUpperCase();
+  ngay.trim();
+  if(ngay.toInt() < 10) {
+    ngay = "0" + ngay;
+  }
+  if(month=="Jan")  thang="01";
+  else if(month=="Feb")  thang="02";
+  else if(month=="Mar")  thang="03";
+  else if(month=="Apr")  thang="04";
+  else if(month=="May")  thang="05";
+  else if(month=="Jun")  thang="06";
+  else if(month=="Jul")  thang="07";
+  else if(month=="Aug")  thang="08";
+  else if(month=="Sep")  thang="09";
+  else if(month=="Oct")  thang="10";
+  else if(month=="Nov")  thang="11";
+  else if(month=="Dec")  thang="12";
+  hour    = gio.toInt();
+  minute  = phut.toInt();
+  sec     = giay.toInt();
+}
+
+void duBaoHienTai(String latitude, String longitude,String key) {
+  HTTPClient  http;
+  http.begin("http://api.weatherbit.io/v2.0/current?&lat="+latitude+"&lon="+longitude+"&key="+key);
+  if(http.GET() == HTTP_CODE_OK) {
+    String data = http.getString();
+    DynamicJsonDocument doc(1200);
+    deserializeJson(doc, (char*) data.c_str());
+    nhietDoHienTai    = doc["data"][0]["temp"].as<int>();
+    doAmHienTai       = doc["data"][0]["rh"].as<int>();
+    thoiTietHienTai   = doc["data"][0]["weather"]["code"].as<int>();
+  }
+  http.end();
+}
+
+void duBaoThoiTiet(String latitude, String longitude,String key) {
+  HTTPClient  http;
+  http.begin("http://api.weatherbit.io/v2.0/forecast/daily?&lat="+latitude+"&lon="+longitude+"&days=2&key="+key);
+  if(http.GET() == HTTP_CODE_OK) {
+    String data = http.getString();
+    Serial.println(data);
+    DynamicJsonDocument root(2400);
+    deserializeJson(root, (char*) data.c_str());
+    nhietDoNgayMai  = root["data"][1]["temp"].as<int>();
+    doAmNgayMai     = root["data"][1]["rh"].as<int>();
+    thoiTietNgayMai = root["data"][1]["weather"]["code"].as<int>();
+    String ngay    = root["data"][1]["datetime"];
+    ngayMai         = ngay.substring(8,10);
+    thangSau        = ngay.substring(5,7);
+  }
+  http.end();
+}
+
+/*---------------------------Hiển thị 1 chuỗi kí tự---------------------------*/
+void hienThi(int x, int y,String chuoi) {
+  lcd.Asc_String(x,y,(char*) chuoi.c_str(),BLACK);
+}
+
+/*---------------------------Căn giữa 1 chuỗi kí tự---------------------------*/
+void canGiua(int x, int y, String a) {         // Căn giữa 1 chuỗi kí tự
+  lcd.Asc_String(x+1-(a.length()*6)/2,y+1,(char*) a.c_str(),BLACK);
+}
+
+/*--------------------------Hiển thị số, font CASIO---------------------------*/
+void hienThiSoCasio(int x,int y,int so,bool color) {      // Hiện thị 1 số theo font Casio
+  if(so<10) {
+    lcd.Number_Ulong(x,y,0,CASIO_NUMBER,color);
+    lcd.Number_Ulong(x+13,y,so,CASIO_NUMBER,color);
+  }
+  else
+    lcd.Number_Ulong(x,y,so,CASIO_NUMBER,color);
+}
+
+/*---------------------------Hiển thị thời gian------------------------------*/
+void hienThiGio() {
+  hienThiSoCasio(66,15,hour,BLACK);
+  if(sec%2==0)
+    lcd.Rect(95,19,2,9,BLACK);          // Dấu ':'
+  else
+    lcd.Rect(95,19,2,9,WHITE);
+  lcd.Rect(95,21,2,5,WHITE);
+  hienThiSoCasio(100,15,minute,BLACK);
+}
+
+void Signal() {                     // Hiển thị cường độ tín hiệu WiFi
+  int percent;
+  dBm = WiFi.RSSI();                              // Cường độ tín hiệu
+  if(dBm<=-100 || WiFi.status() != WL_CONNECTED)  // Nếu cường độ < -100dBm thì không có tín hiệu WiFi
+    quality=0;
+  else                                            // Nếu cường độ >-50dBm thì cường độ tín hiệu tốt
+    if(dBm>=-50)
+      quality=100;
+    else                                          // Cường độ tín hiệu tính theo công thức 2 * ( dBm + 100)
+      quality = 2*(dBm+100);
+  if(quality == 0)
+    percent = 0;
+  else
+    if(quality<=20)
+      percent = 1;
+    else
+      if(quality<=40)
+        percent = 2;
+      else
+        if(quality<=60)
+          percent = 3;
+        else
+          if(quality<=80)
+            percent = 4;
+          else
+            percent = 5;
+  for(int i=0;i<percent;i++) {                      // Hiển thị cột sóng
+    lcd.Rect(4+2*i-2,8-i,1,i+1,BLACK);
+  }
+}
+
+void iconThoiTiet(int x, int y,int code,int ngaybao) {      //https://www.weatherbit.io/api/codes   Hiển thị Icon thời tiết
+  if(code==200 || code==201 || code==202)       // Mua kem sam set
+    lcd.Bitmap(x,y,24,24,lighting_rain,BLACK);
+  if(code==230 || code==231 || code==232 || code==233)   // Sam set
+    lcd.Bitmap(x,y,24,24,lighting,BLACK);
+  if(code==300 || code==301 || code==302 || code==500 || code==501 || code==502 || code==511 || code==520 || code==521 || code==522 || code==623)// May + mua
+    lcd.Bitmap(x,y,24,24,rain,BLACK);
+  if(ngaybao==1) {
+    if(hour <18 && hour>5) {
+      if(code==800)                                 // Clear Sky
+        lcd.Bitmap(x,y,24,24,clear_sky,BLACK);
+      if(code==801 || code==802 || code==803 || code==700 || code==711 || code==721 || code==731 || code==741 || code==751)       // Code 800 + may
+        lcd.Bitmap(x,y,24,24,clear_cloudy,BLACK);
+    }
+    else {
+      if(code==800)                                 // Clear Sky
+        lcd.Bitmap(x,y,24,24,night,BLACK);
+      if(code==801 || code==802 || code==803 || code==700 || code==711 || code==721 || code==731 || code==741 || code==751)       // Code 800 + may
+        lcd.Bitmap(x,y,24,24,night_cloud,BLACK);
+    }
+  }
+  else {
+    if(code==800)                                 // Clear Sky
+      lcd.Bitmap(x,y,24,24,clear_sky,BLACK);
+    if(code==801 || code==802 || code==803 || code==700 || code==711 || code==721 || code==731 || code==741 || code==751)       // Code 800 + may
+      lcd.Bitmap(x,y,24,24,clear_cloudy,BLACK);
+  }
+  if(code==611 || code==612 || code==804 )                                // may X2
+    lcd.Bitmap(x,y,24,24,cloudy,BLACK);
+}
+
+void hienThiThoiTiet(int x, int y,String Day,String nhietdo, String doam) {     // Hiển thị form nhiệt độ, độ ẩm
+  lcd.FillRect(x-15,y,Day.length()*6+1,9,BLACK);          // Ngày
+  lcd.Asc_String(x-14,y+1,(char*) Day.c_str(),WHITE);
+  if(nhietdo.toInt() < 10) {                             // Nhiệt độ
+    hienThi(x-9,y+10,nhietdo);
+    lcd.Bitmap(x-3,y+10,5,7,tdo,BLACK);
+    lcd.Asc_Char(x+3,y+10,'C',BLACK);
+  }
+  else {
+    hienThi(x-11,y+10,nhietdo);
+    lcd.Bitmap(x+1,y+10,5,7,tdo,BLACK);
+    lcd.Asc_Char(x+7,y+10,'C',BLACK);
+  }
+  canGiua(x,y+18,doam+"%");                                // Độ ẩm
+}
