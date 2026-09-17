@@ -36,7 +36,7 @@
 const String cityName   = "Ha Noi";
 const String latitude   = "21.0651854";                         // Kinh độ
 const String longitude  = "105.7185722";                        // Vĩ độ
-const String key        = "79eff4254e1ebba42090b2f6445a5b4f";   // auth key weatherbit.io
+const String key        = "711a2fd0ea834d9a9216db69744c4d9e";   // auth key weatherbit.io
 int     lanChayHieuUng, viTriHieuUng, thoiGianChayHieuUng;
 
 Ticker      flip;
@@ -51,7 +51,7 @@ void setup() {
   pinMode(Back,INPUT_PULLUP);
   pinMode(Buzz,OUTPUT);
   lcd.ON();                                                   // Khởi tạo LCD
-  lcd.SET(25,0,0,0,4);
+  lcd.SET(20,0,0,0,4);
   lcd.display();
   lcd.clear();                                                // Hiển thị
   lcd.Corner(0,0,127,63,5,BLACK);                             // Vẽ bo ngoài
