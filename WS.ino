@@ -33,9 +33,9 @@
 #define Buzz    15    //D8--GPIO15
 
 // Tọa độ có thể tùy vào vị trí bạn ở
-const String cityName   = "Ha Noi";
-const String latitude   = "21.0651854";                         // Kinh độ
-const String longitude  = "105.7185722";                        // Vĩ độ
+const String cityName   = "TRA VINH";
+const String latitude   = "9.9347";                        // Kinh độ
+const String longitude  = "106.3452";                        // Vĩ độ
 const String key        = "711a2fd0ea834d9a9216db69744c4d9e";   // auth key weatherbit.io
 int     lanChayHieuUng, viTriHieuUng, thoiGianChayHieuUng;
 
